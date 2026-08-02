@@ -4,7 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { BackHeader } from '../components/BackHeader';
 import { Card } from '../components/Card';
 import { Screen } from '../components/Screen';
-import { catalogById } from '../data/catalog';
+import { findExercise } from '../data/catalog';
 import { RootStackParamList } from '../navigation/types';
 import { useStore } from '../store/useStore';
 import { colors, fonts } from '../theme/theme';
@@ -15,6 +15,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'SessionDetail'>;
 export default function SessionDetailScreen({ navigation, route }: Props) {
   const session = useStore((s) => s.history.find((h) => h.id === route.params.sessionId));
   const rir = useStore((s) => s.settings.rir);
+  const exercises = useStore((s) => s.exercises);
 
   if (!session) {
     return (
@@ -44,7 +45,7 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
       </View>
 
       {session.exercises.map((ex) => {
-        const prefix = catalogById(ex.exerciseId).isWeighted ? '+' : '';
+        const prefix = findExercise(exercises, ex.exerciseId).isWeighted ? '+' : '';
         return (
           <Card key={ex.exerciseId} style={styles.exCard}>
             <Text style={styles.exName}>{ex.name}</Text>

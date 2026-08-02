@@ -1,14 +1,15 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SecondaryButton } from '../components/Buttons';
 import { Screen } from '../components/Screen';
-import { catalogById, templateById } from '../data/catalog';
+import { findExercise, findTemplate } from '../data/catalog';
 import { useRestCountdown } from '../hooks/useSessionTicker';
 import { RootStackParamList } from '../navigation/types';
-import { effectiveExercises, useStore } from '../store/useStore';
+import { useStore } from '../store/useStore';
 import { colors, fonts } from '../theme/theme';
 import { fmtKg, mmss, scaleLabel, scaleValue } from '../utils/format';
+import { cancelRestEnd, scheduleRestEnd } from '../utils/notifications';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Rest'>;
 
@@ -19,6 +20,8 @@ export default function RestScreen({ navigation }: Props) {
   const plus30 = useStore((s) => s.plus30);
   const minus30 = useStore((s) => s.minus30);
   const discardSession = useStore((s) => s.discardSession);
+  const templates = useStore((s) => s.templates);
+  const exercises = useStore((s) => s.exercises);
 
   useRestCountdown(() => navigation.replace('Set'));
 
@@ -26,22 +29,68 @@ export default function RestScreen({ navigation }: Props) {
     if (!active) navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
   }, [active, navigation]);
 
+  // Describes the set waiting on the other side of the rest, for the notification body.
+  const buildSubtitle = () => {
+    const s = useStore.getState();
+    const a = s.active;
+    if (!a) return 'Série suivante';
+    const t = findTemplate(s.templates, a.templateId);
+    const te = t?.exercises[a.exerciseIndex];
+    if (!te) return 'Série suivante';
+    const def = findExercise(s.exercises, te.exerciseId);
+    const p = def.isWeighted ? '+' : '';
+    return `${def.name} · S${a.setIndex + 1} · ${p}${fmtKg(a.kg)} kg × ${a.reps}`;
+  };
+
+  const notifyEnabled = settings.restNotification;
+
+  // Schedule the wrist alert once on entry; the countdown itself is in-app only.
+  useEffect(() => {
+    if (!notifyEnabled) return;
+    const a = useStore.getState().active;
+    if (a && a.screen === 'rest' && a.rest > 0) scheduleRestEnd(a.rest, buildSubtitle());
+    return () => {
+      cancelRestEnd();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notifyEnabled]);
+
+  const reschedule = () => {
+    if (!notifyEnabled) return;
+    const a = useStore.getState().active;
+    if (a) scheduleRestEnd(a.rest, buildSubtitle());
+  };
+
+  const onPlus30 = () => {
+    plus30();
+    reschedule();
+  };
+  const onMinus30 = () => {
+    minus30();
+    reschedule();
+  };
+  const onSkip = () => {
+    cancelRestEnd();
+    skipRest();
+    navigation.replace('Set');
+  };
+
   if (!active || !active.lastValidated) return <Screen scroll={false} />;
 
-  const template = templateById(active.templateId);
+  const template = findTemplate(templates, active.templateId);
   if (!template) return <Screen scroll={false} />;
-  const exList = effectiveExercises(active, template);
+  const exList = template.exercises;
 
   const accent = settings.accent;
   const rir = settings.rir;
   const lv = active.lastValidated;
-  const finishedCatalog = catalogById(lv.exerciseId);
+  const finishedCatalog = findExercise(exercises, lv.exerciseId);
   const finishedPrefix = finishedCatalog.isWeighted ? '+' : '';
 
   const doneHere = active.log.filter((l) => l.exerciseId === lv.exerciseId);
 
   const curEx = exList[active.exerciseIndex];
-  const curCatalog = catalogById(curEx.exerciseId);
+  const curCatalog = findExercise(exercises, curEx.exerciseId);
   const isNewExercise = curEx.exerciseId !== lv.exerciseId;
   const curPrefix = curCatalog.isWeighted ? '+' : '';
   const nextTargetLine = `S${active.setIndex + 1} · ${isNewExercise ? curCatalog.name + ' · ' : ''}${curPrefix}${fmtKg(
@@ -57,6 +106,7 @@ export default function RestScreen({ navigation }: Props) {
         text: 'Quitter',
         style: 'destructive',
         onPress: () => {
+          cancelRestEnd();
           discardSession();
           navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
         },
@@ -68,7 +118,7 @@ export default function RestScreen({ navigation }: Props) {
     <Screen>
       <View style={styles.headerRow}>
         <Text style={styles.headerLabel}>
-          {template.shortName} · {mmss((Date.now() - active.startedAt) / 1000)}
+          {template.name} · {mmss((Date.now() - active.startedAt) / 1000)}
         </Text>
         <Pressable hitSlop={8} onPress={quit} style={styles.closeBtn}>
           <Text style={styles.closeIcon}>✕</Text>
@@ -88,9 +138,9 @@ export default function RestScreen({ navigation }: Props) {
       </View>
 
       <View style={styles.actionsRow}>
-        <SecondaryButton label="+30 s" onPress={plus30} />
-        <SecondaryButton label="−30 s" onPress={minus30} />
-        <SecondaryButton label="Passer →" onPress={() => { skipRest(); navigation.replace('Set'); }} />
+        <SecondaryButton label="+30 s" onPress={onPlus30} />
+        <SecondaryButton label="−30 s" onPress={onMinus30} />
+        <SecondaryButton label="Passer →" onPress={onSkip} />
       </View>
 
       <View style={styles.card}>

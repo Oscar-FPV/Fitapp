@@ -11,7 +11,7 @@ import { StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { colors } from './src/theme/theme';
-import { useStore } from './src/store/useStore';
+import { hydrateStore } from './src/store/useStore';
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -21,14 +21,17 @@ export default function App() {
     InterTight_700Bold,
     InterTight_800ExtraBold,
   });
-  const [hydrated, setHydrated] = useState(useStore.persist.hasHydrated());
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    if (hydrated) return;
-    const unsub = useStore.persist.onFinishHydration(() => setHydrated(true));
-    if (useStore.persist.hasHydrated()) setHydrated(true);
-    return unsub;
-  }, [hydrated]);
+    let cancelled = false;
+    hydrateStore().finally(() => {
+      if (!cancelled) setHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (!fontsLoaded || !hydrated) {
     return <View style={styles.splash} />;

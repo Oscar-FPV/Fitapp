@@ -7,7 +7,9 @@ export type RootStackParamList = {
   SessionDetail: { sessionId: string };
   Exos: undefined;
   ExoDetail: { exerciseId: string };
-  Edit: undefined;
+  ExoEdit: { exerciseId?: string };
+  Sessions: undefined;
+  SessionEdit: { templateId: string };
   Planning: undefined;
   Settings: undefined;
 };

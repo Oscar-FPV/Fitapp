@@ -3,11 +3,12 @@ import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BigButton, SecondaryButton } from '../components/Buttons';
 import { Card } from '../components/Card';
+import { EmptyState } from '../components/EmptyState';
 import { GroupBars } from '../components/GroupBars';
 import { HistogramBars } from '../components/HistogramBars';
 import { Screen } from '../components/Screen';
 import { WeekDots } from '../components/WeekDots';
-import { templateById, sessionTag } from '../data/catalog';
+import { findTemplate, sessionTag } from '../data/catalog';
 import { RootStackParamList } from '../navigation/types';
 import {
   last5SessionsVolume,
@@ -26,27 +27,30 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 export default function HomeScreen({ navigation }: Props) {
   const plan = useStore((s) => s.plan);
   const history = useStore((s) => s.history);
+  const exercises = useStore((s) => s.exercises);
+  const templates = useStore((s) => s.templates);
   const accent = useStore((s) => s.settings.accent);
   const startSession = useStore((s) => s.startSession);
 
   const today = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => dateKey(today), [today]);
 
-  const resolvedTemplateId = useMemo(
-    () => resolveDayTemplate(plan, history, todayKey, todayKey),
-    [plan, history, todayKey]
-  );
-  const template = resolvedTemplateId ? templateById(resolvedTemplateId) : undefined;
-  const isRestDay = !template || template.isActiveRest;
+  const todayTemplateId = resolveDayTemplate(plan, todayKey);
+  const template = findTemplate(templates, todayTemplateId);
 
   const progress = useMemo(() => weekSessionProgress(plan, history, today), [plan, history, today]);
-  const dots = useMemo(() => weekDots(history, today), [history, today]);
+  const dots = useMemo(() => weekDots(plan, history, today), [plan, history, today]);
   const volumeBars = useMemo(() => last5SessionsVolume(history), [history]);
   const volumeChange = useMemo(() => volumeTotalChangePct(history), [history]);
-  const groups = useMemo(() => volumeByGroup4Weeks(history, today), [history, today]);
+  const groups = useMemo(
+    () => volumeByGroup4Weeks(history, exercises, today),
+    [history, exercises, today]
+  );
+
+  const isFirstRun = exercises.length === 0 && templates.length === 0;
 
   const handleStart = () => {
-    if (startSession()) navigation.navigate('Set');
+    if (todayTemplateId && startSession(todayTemplateId)) navigation.navigate('Set');
   };
 
   return (
@@ -62,56 +66,91 @@ export default function HomeScreen({ navigation }: Props) {
         </Pressable>
       </View>
 
-      <View style={styles.todayCard}>
-        <Text style={styles.todayLabel}>Aujourd'hui</Text>
-        {isRestDay ? (
-          <>
-            <Text style={styles.todayTitle}>Repos</Text>
-            <Text style={styles.todaySub}>Aucune séance prévue aujourd'hui</Text>
-          </>
-        ) : (
-          <>
-            <Text style={styles.todayTitle}>{template!.shortName}</Text>
-            <Text style={styles.todaySub}>{sessionTag(template!)}</Text>
-            <BigButton label="▶ COMMENCER" onPress={handleStart} accent={accent} />
-          </>
-        )}
-      </View>
+      {isFirstRun ? (
+        <EmptyState
+          title="Bienvenue"
+          body="Commencez par créer vos exercices, composez ensuite vos séances, puis placez-les dans le planning."
+          actionLabel="+ Créer mon premier exercice"
+          onAction={() => navigation.navigate('ExoEdit', {})}
+          accent={accent}
+        />
+      ) : (
+        <View style={styles.todayCard}>
+          <Text style={styles.todayLabel}>Aujourd'hui</Text>
+          {template && template.exercises.length > 0 ? (
+            <>
+              <Text style={styles.todayTitle}>{template.name}</Text>
+              <Text style={styles.todaySub}>{sessionTag(template)}</Text>
+              <BigButton label="▶ COMMENCER" onPress={handleStart} accent={accent} />
+            </>
+          ) : template ? (
+            <>
+              <Text style={styles.todayTitle}>{template.name}</Text>
+              <Text style={styles.todaySub}>Cette séance ne contient aucun exercice</Text>
+              <SecondaryButton
+                label="Composer la séance"
+                onPress={() => navigation.navigate('SessionEdit', { templateId: template.id })}
+                flex={false}
+              />
+            </>
+          ) : (
+            <>
+              <Text style={styles.todayTitle}>Repos</Text>
+              <Text style={styles.todaySub}>Aucune séance prévue aujourd'hui</Text>
+              <SecondaryButton
+                label="Planifier"
+                onPress={() => navigation.navigate('Planning')}
+                flex={false}
+              />
+            </>
+          )}
+        </View>
+      )}
 
       <View style={styles.secondaryRow}>
-        <SecondaryButton label="Modifier" onPress={() => navigation.navigate('Edit')} />
+        <SecondaryButton label="Séances" onPress={() => navigation.navigate('Sessions')} />
         <SecondaryButton label="Planning" onPress={() => navigation.navigate('Planning')} />
         <SecondaryButton label="Exos" onPress={() => navigation.navigate('Exos')} />
       </View>
 
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Cette semaine</Text>
-        <Text style={styles.sectionValue}>
-          {progress.done} / {progress.planned}
-        </Text>
-      </View>
-      <View style={styles.dotsWrap}>
-        <WeekDots dots={dots} />
-      </View>
+      {history.length > 0 || progress.planned > 0 ? (
+        <>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Cette semaine</Text>
+            <Text style={styles.sectionValue}>
+              {progress.done} / {progress.planned || '—'}
+            </Text>
+          </View>
+          <View style={styles.dotsWrap}>
+            <WeekDots dots={dots} accent={accent} />
+          </View>
+        </>
+      ) : null}
 
-      <Card style={styles.volumeCard}>
-        <View style={styles.cardHeaderRow}>
-          <Text style={styles.cardTitle}>Volume total</Text>
-          <Text style={[styles.cardValueAccent, { color: accent }]}>{pct(volumeChange)}</Text>
-        </View>
-        <HistogramBars bars={volumeBars} accent={accent} />
-      </Card>
+      {history.length >= 2 ? (
+        <Card style={styles.volumeCard}>
+          <View style={styles.cardHeaderRow}>
+            <Text style={styles.cardTitle}>Volume total</Text>
+            <Text style={[styles.cardValueAccent, { color: accent }]}>{pct(volumeChange)}</Text>
+          </View>
+          <HistogramBars bars={volumeBars} accent={accent} />
+        </Card>
+      ) : null}
 
-      <Card style={styles.groupCard}>
-        <Text style={styles.cardTitleWithSub}>
-          Volume par groupe <Text style={styles.cardTitleSub}>· 4 semaines</Text>
-        </Text>
-        <GroupBars groups={groups} />
-      </Card>
+      {groups.length > 0 ? (
+        <Card style={styles.groupCard}>
+          <Text style={styles.cardTitleWithSub}>
+            Volume par groupe <Text style={styles.cardTitleSub}>· 4 semaines</Text>
+          </Text>
+          <GroupBars groups={groups} />
+        </Card>
+      ) : null}
 
-      <Pressable onPress={() => navigation.navigate('History')} style={styles.historyLink}>
-        <Text style={styles.historyLinkText}>↓ Historique des séances</Text>
-      </Pressable>
+      {history.length > 0 ? (
+        <Pressable onPress={() => navigation.navigate('History')} style={styles.historyLink}>
+          <Text style={styles.historyLinkText}>↓ Historique des séances</Text>
+        </Pressable>
+      ) : null}
     </Screen>
   );
 }
@@ -150,8 +189,8 @@ const styles = StyleSheet.create({
   },
   todayTitle: {
     fontFamily: fonts.bold,
-    fontSize: 40,
-    lineHeight: 41,
+    fontSize: 34,
+    lineHeight: 38,
     letterSpacing: -1,
     color: colors.text,
     marginTop: 12,
@@ -170,7 +209,12 @@ const styles = StyleSheet.create({
   sectionValue: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMuted },
   dotsWrap: { marginBottom: 26 },
   volumeCard: { padding: 18, marginBottom: 12 },
-  cardHeaderRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 18 },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
   cardTitle: { fontFamily: fonts.semibold, fontSize: 13, color: colors.text },
   cardValueAccent: { fontFamily: fonts.semibold, fontSize: 13 },
   groupCard: { padding: 18, marginBottom: 26 },

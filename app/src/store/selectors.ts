@@ -1,43 +1,46 @@
-import { catalogById, TEMPLATES } from '../data/catalog';
-import { HistoryExercise, HistorySession, SetLogEntry, TemplateExercise } from '../types/models';
+import { findExercise } from '../data/catalog';
+import {
+  ExerciseDef,
+  HistoryExercise,
+  HistorySession,
+  SetLogEntry,
+  TemplateExercise,
+} from '../types/models';
 import { addDays, dateKey, e1rm, fmtKg, startOfWeek } from '../utils/format';
-
-export function suggestedTemplateId(history: HistorySession[]): string | null {
-  const order = TEMPLATES.filter((t) => !t.isActiveRest).map((t) => t.id);
-  if (order.length === 0) return null;
-  const last = history[0];
-  if (!last) return order[0];
-  const idx = order.indexOf(last.templateId);
-  if (idx === -1) return order[0];
-  return order[(idx + 1) % order.length];
-}
 
 export function resolveDayTemplate(
   plan: Record<string, string | null>,
-  history: HistorySession[],
-  key: string,
-  todayKey: string
-): string | null | undefined {
-  if (key in plan) return plan[key];
-  if (key === todayKey) return suggestedTemplateId(history);
-  return undefined;
+  key: string
+): string | null {
+  return plan[key] ?? null;
 }
 
 export interface WeekDot {
   date: Date;
   key: string;
   done: boolean;
+  planned: boolean;
   isToday: boolean;
 }
 
-export function weekDots(history: HistorySession[], today: Date): WeekDot[] {
+export function weekDots(
+  plan: Record<string, string | null>,
+  history: HistorySession[],
+  today: Date
+): WeekDot[] {
   const start = startOfWeek(today);
   const todayKey = dateKey(today);
   const doneSet = new Set(history.map((h) => h.dateKey));
   return Array.from({ length: 7 }, (_, i) => {
     const d = addDays(start, i);
     const key = dateKey(d);
-    return { date: d, key, done: doneSet.has(key), isToday: key === todayKey };
+    return {
+      date: d,
+      key,
+      done: doneSet.has(key),
+      planned: !!plan[key],
+      isToday: key === todayKey,
+    };
   });
 }
 
@@ -47,16 +50,14 @@ export function weekSessionProgress(
   today: Date
 ): { done: number; planned: number } {
   const start = startOfWeek(today);
-  const todayKey = dateKey(today);
   let planned = 0;
   let done = 0;
   for (let i = 0; i < 7; i++) {
     const key = dateKey(addDays(start, i));
-    const resolved = resolveDayTemplate(plan, history, key, todayKey);
-    if (resolved) planned++;
+    if (plan[key]) planned++;
     if (history.some((h) => h.dateKey === key)) done++;
   }
-  return { done, planned: planned || 4 };
+  return { done, planned };
 }
 
 export interface VolumeBar {
@@ -89,13 +90,17 @@ export interface GroupVolume {
   pct: number;
 }
 
-export function volumeByGroup4Weeks(history: HistorySession[], today: Date): GroupVolume[] {
+export function volumeByGroup4Weeks(
+  history: HistorySession[],
+  exercises: ExerciseDef[],
+  today: Date
+): GroupVolume[] {
   const cutoffKey = dateKey(addDays(today, -28));
   const groups: Record<string, number> = {};
   for (const h of history) {
     if (h.dateKey < cutoffKey) continue;
     for (const ex of h.exercises) {
-      const g = catalogById(ex.exerciseId).group;
+      const g = findExercise(exercises, ex.exerciseId).group;
       groups[g] = (groups[g] ?? 0) + ex.sets.length;
     }
   }
@@ -135,12 +140,13 @@ function bestHistoricalSet(
 export function buildSessionSummary(
   log: SetLogEntry[],
   exList: TemplateExercise[],
-  history: HistorySession[]
+  history: HistorySession[],
+  exercises: ExerciseDef[]
 ): SessionSummary {
-  const exercises: HistoryExercise[] = exList
+  const summarised: HistoryExercise[] = exList
     .map((te) => ({
       exerciseId: te.exerciseId,
-      name: catalogById(te.exerciseId).name,
+      name: findExercise(exercises, te.exerciseId).name,
       sets: log
         .filter((l) => l.exerciseId === te.exerciseId)
         .map((l) => ({ kg: l.kg, reps: l.reps, rpe: l.rpe })),
@@ -158,10 +164,14 @@ export function buildSessionSummary(
   let prPreviousLine: string | undefined;
   let prPct: number | undefined;
 
-  for (const ex of exercises) {
+  for (const ex of summarised) {
     const prior = bestHistoricalSet(history, ex.exerciseId);
     const priorBest = prior?.e1rm ?? 0;
-    const sessionBestSet = ex.sets.reduce((a, b) => (e1rm(b.kg, b.reps) > e1rm(a.kg, a.reps) ? b : a));
+    // A first-ever performance isn't a "record" — there is nothing to beat yet.
+    if (!prior) continue;
+    const sessionBestSet = ex.sets.reduce((a, b) =>
+      e1rm(b.kg, b.reps) > e1rm(a.kg, a.reps) ? b : a
+    );
     const sessionBest = e1rm(sessionBestSet.kg, sessionBestSet.reps);
     if (sessionBest > priorBest) {
       const margin = sessionBest - priorBest;
@@ -170,14 +180,14 @@ export function buildSessionSummary(
         bestMargin = margin;
         prExerciseName = ex.name;
         prLine = `${fmtKg(sessionBestSet.kg)} kg × ${sessionBestSet.reps}`;
-        prPreviousLine = prior ? `${fmtKg(prior.kg)} kg × ${prior.reps}` : undefined;
-        prPct = prior && priorBest > 0 ? Math.round(((sessionBest - priorBest) / priorBest) * 100) : undefined;
+        prPreviousLine = `${fmtKg(prior.kg)} kg × ${prior.reps}`;
+        prPct = priorBest > 0 ? Math.round(((sessionBest - priorBest) / priorBest) * 100) : undefined;
       }
     }
   }
 
   return {
-    exercises,
+    exercises: summarised,
     volumeKg: Math.round(volumeKg),
     setsCount,
     avgRpe: Math.round(avgRpe * 10) / 10,
@@ -227,10 +237,11 @@ export interface ExerciseStats {
 
 export function exerciseStats(
   history: HistorySession[],
+  exercises: ExerciseDef[],
   exerciseId: string,
   today: Date
 ): ExerciseStats {
-  const def = catalogById(exerciseId);
+  const def = findExercise(exercises, exerciseId);
   const prefix = def.isWeighted ? '+' : '';
 
   const appearances = history
@@ -240,23 +251,22 @@ export function exerciseStats(
       sets: h.exercises.find((e) => e.exerciseId === exerciseId)!.sets,
     }));
 
-  if (appearances.length === 0) {
-    return {
-      exerciseId,
-      name: def.name,
-      group: def.group,
-      freq: def.freq,
-      isWeighted: def.isWeighted,
-      hasData: false,
-      bestLine: '—',
-      bestE1rm: 0,
-      trend: '—',
-      trendUp: false,
-      bars: [],
-      log: [],
-      lastSessionDaysAgo: null,
-    };
-  }
+  const empty: ExerciseStats = {
+    exerciseId,
+    name: def.name,
+    group: def.group,
+    freq: 'jamais fait',
+    isWeighted: def.isWeighted,
+    hasData: false,
+    bestLine: '—',
+    bestE1rm: 0,
+    trend: '—',
+    trendUp: false,
+    bars: [],
+    log: [],
+    lastSessionDaysAgo: null,
+  };
+  if (appearances.length === 0) return empty;
 
   let best = { e1rm: 0, kg: 0, reps: 0 };
   for (const a of appearances) {
@@ -304,11 +314,22 @@ export function exerciseStats(
     Math.round((todayMidnight.getTime() - lastDate.getTime()) / 86400000)
   );
 
+  // Frequency measured over the last 4 weeks, expressed per week.
+  const cutoff = dateKey(addDays(today, -28));
+  const recentCount = appearances.filter((a) => a.dateKey >= cutoff).length;
+  const perWeek = recentCount / 4;
+  const freq =
+    recentCount === 0
+      ? 'pas ce mois-ci'
+      : perWeek >= 0.9
+      ? `${Math.round(perWeek)}× / sem.`
+      : `${recentCount}× / 4 sem.`;
+
   return {
     exerciseId,
     name: def.name,
     group: def.group,
-    freq: def.freq,
+    freq,
     isWeighted: def.isWeighted,
     hasData: true,
     bestLine: `${prefix}${fmtKg(best.kg)} kg × ${best.reps}`,

@@ -5,10 +5,10 @@ import { BigButton } from '../components/Buttons';
 import { Card } from '../components/Card';
 import { Screen } from '../components/Screen';
 import { StatTile } from '../components/StatTile';
-import { catalogById, templateById } from '../data/catalog';
+import { findExercise, findTemplate } from '../data/catalog';
 import { RootStackParamList } from '../navigation/types';
 import { buildSessionSummary } from '../store/selectors';
-import { effectiveExercises, useStore } from '../store/useStore';
+import { useStore } from '../store/useStore';
 import { colors, fonts } from '../theme/theme';
 import { fmtKg, mmss, scaleLabel, scaleValue } from '../utils/format';
 
@@ -26,12 +26,14 @@ export default function EndScreen({ navigation }: Props) {
     if (!active) navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
   }, [active, navigation]);
 
-  const template = active ? templateById(active.templateId) : undefined;
+  const templates = useStore((s) => s.templates);
+  const exercises = useStore((s) => s.exercises);
+  const template = findTemplate(templates, active?.templateId);
 
   const summary = useMemo(() => {
     if (!active || !template) return null;
-    return buildSessionSummary(active.log, effectiveExercises(active, template), history);
-  }, [active, template, history]);
+    return buildSessionSummary(active.log, template.exercises, history, exercises);
+  }, [active, template, history, exercises]);
 
   if (!active || !template || !summary) return <Screen scroll={false} />;
 
@@ -51,15 +53,14 @@ export default function EndScreen({ navigation }: Props) {
   return (
     <Screen>
       <Text style={styles.kicker}>Fin de séance</Text>
-      <Text style={styles.title}>
-        {template.shortName} — {mmss(durationSec)}
-      </Text>
+      <Text style={styles.title}>{template.name}</Text>
+      <Text style={styles.duration}>{mmss(durationSec)}</Text>
 
       <View style={styles.tilesRow}>
         <StatTile
           label="Volume"
           value={summary.volumeKg.toLocaleString('fr-FR')}
-          sub={`kg · ${volumeChange >= 0 ? '+' : ''}${volumeChange} %`}
+          sub={prevVolume > 0 ? `kg · ${volumeChange >= 0 ? '+' : ''}${volumeChange} %` : 'kg'}
           subColor={colors.textMuted}
         />
         <StatTile
@@ -90,7 +91,7 @@ export default function EndScreen({ navigation }: Props) {
       <Card style={styles.detailCard} radiusSize={20}>
         <Text style={styles.detailLabel}>Détail</Text>
         {summary.exercises.map((ex) => {
-          const isWeighted = catalogById(ex.exerciseId).isWeighted;
+          const isWeighted = findExercise(exercises, ex.exerciseId).isWeighted;
           const prefix = isWeighted ? '+' : '';
           const reps = ex.sets.map((s) => s.reps);
           const sameReps = reps.every((r) => r === reps[0]);
@@ -127,7 +128,15 @@ export default function EndScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   kicker: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMuted, marginBottom: 10 },
-  title: { fontFamily: fonts.bold, fontSize: 40, letterSpacing: -1, lineHeight: 42, color: colors.text, marginBottom: 20 },
+  title: { fontFamily: fonts.bold, fontSize: 34, letterSpacing: -1, lineHeight: 37, color: colors.text },
+  duration: {
+    fontFamily: fonts.bold,
+    fontSize: 34,
+    letterSpacing: -1,
+    lineHeight: 40,
+    color: colors.textFaint,
+    marginBottom: 20,
+  },
   tilesRow: { flexDirection: 'row', gap: 11, marginBottom: 12 },
   prCard: { padding: 16, paddingHorizontal: 18, marginBottom: 12 },
   prLabel: {

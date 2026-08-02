@@ -6,10 +6,10 @@ import { NumberPad } from '../components/NumberPad';
 import { RpeChips } from '../components/RpeChips';
 import { Screen } from '../components/Screen';
 import { SegmentedProgress } from '../components/SegmentedProgress';
-import { catalogById, templateById } from '../data/catalog';
+import { findExercise, findTemplate } from '../data/catalog';
 import { RootStackParamList } from '../navigation/types';
 import { lastTimeForExerciseSet } from '../store/selectors';
-import { effectiveExercises, useStore } from '../store/useStore';
+import { useStore } from '../store/useStore';
 import { colors, fonts } from '../theme/theme';
 import { displayWeight, fmtKg, kgToLb, lbToKg, scaleLabel, scaleValue } from '../utils/format';
 
@@ -26,6 +26,8 @@ export default function SetScreen({ navigation }: Props) {
   const setNoteOpen = useStore((s) => s.setNoteOpen);
   const validateSet = useStore((s) => s.validateSet);
   const discardSession = useStore((s) => s.discardSession);
+  const templates = useStore((s) => s.templates);
+  const exercises = useStore((s) => s.exercises);
 
   const [pad, setPad] = useState<'kg' | 'reps' | null>(null);
 
@@ -33,16 +35,16 @@ export default function SetScreen({ navigation }: Props) {
     if (!active) navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
   }, [active, navigation]);
 
-  const template = active ? templateById(active.templateId) : undefined;
+  const template = findTemplate(templates, active?.templateId);
   const exList = useMemo(
-    () => (active && template ? effectiveExercises(active, template) : []),
-    [active, template]
+    () => template?.exercises ?? [],
+    [template]
   );
 
   if (!active || !template || exList.length === 0) return <Screen scroll={false} />;
 
   const curEx = exList[active.exerciseIndex];
-  const catalogEntry = catalogById(curEx.exerciseId);
+  const catalogEntry = findExercise(exercises, curEx.exerciseId);
   const unit = settings.unit;
   const accent = settings.accent;
 
@@ -100,7 +102,7 @@ export default function SetScreen({ navigation }: Props) {
     ? 'Exercice suivant'
     : `S${active.setIndex + 2} · ${prefix}${fmtKg(displayVal(active.kg, unit))} ${unit} × ${curEx.reps}`;
   const nextExLine = followingEx
-    ? `${catalogById(followingEx.exerciseId).name} · ${followingEx.sets}×${followingEx.reps}`
+    ? `${findExercise(exercises, followingEx.exerciseId).name} · ${followingEx.sets}×${followingEx.reps}`
     : 'Dernier exercice';
 
   return (

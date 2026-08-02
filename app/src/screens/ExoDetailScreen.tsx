@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BackHeader } from '../components/BackHeader';
 import { Card } from '../components/Card';
 import { Screen } from '../components/Screen';
@@ -14,11 +14,12 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ExoDetail'>;
 
 export default function ExoDetailScreen({ navigation, route }: Props) {
   const history = useStore((s) => s.history);
+  const exercises = useStore((s) => s.exercises);
   const settings = useStore((s) => s.settings);
   const today = useMemo(() => new Date(), []);
   const stats = useMemo(
-    () => exerciseStats(history, route.params.exerciseId, today),
-    [history, route.params.exerciseId, today]
+    () => exerciseStats(history, exercises, route.params.exerciseId, today),
+    [history, exercises, route.params.exerciseId, today]
   );
   const accent = settings.accent;
 
@@ -33,7 +34,16 @@ export default function ExoDetailScreen({ navigation, route }: Props) {
 
   return (
     <Screen>
-      <BackHeader subtitle={stats.group} onBack={() => navigation.goBack()} />
+      <View style={styles.headerRow}>
+        <BackHeader subtitle={stats.group} onBack={() => navigation.goBack()} />
+        <Pressable
+          onPress={() => navigation.navigate('ExoEdit', { exerciseId: stats.exerciseId })}
+          hitSlop={8}
+          style={styles.editBtn}
+        >
+          <Text style={[styles.editLabel, { color: accent }]}>Modifier</Text>
+        </Pressable>
+      </View>
       <Text style={styles.title}>{stats.name}</Text>
       <Text style={styles.sub}>
         {stats.freq} · {lastLabel}
@@ -95,6 +105,9 @@ export default function ExoDetailScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  editBtn: { height: 44, justifyContent: 'center', marginBottom: 16 },
+  editLabel: { fontFamily: fonts.semibold, fontSize: 14 },
   title: { fontFamily: fonts.bold, fontSize: 34, letterSpacing: -1, lineHeight: 36, color: colors.text, marginBottom: 6 },
   sub: { fontFamily: fonts.regular, fontSize: 13.5, color: colors.textMuted, marginBottom: 20 },
   prCard: { padding: 16, paddingHorizontal: 18, marginBottom: 12 },

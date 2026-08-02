@@ -1,15 +1,17 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
-import EditSessionScreen from '../screens/EditSessionScreen';
 import EndScreen from '../screens/EndScreen';
 import ExoDetailScreen from '../screens/ExoDetailScreen';
+import ExoEditScreen from '../screens/ExoEditScreen';
 import ExosScreen from '../screens/ExosScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import HomeScreen from '../screens/HomeScreen';
 import PlanningScreen from '../screens/PlanningScreen';
 import RestScreen from '../screens/RestScreen';
 import SessionDetailScreen from '../screens/SessionDetailScreen';
+import SessionEditScreen from '../screens/SessionEditScreen';
+import SessionsScreen from '../screens/SessionsScreen';
 import SetScreen from '../screens/SetScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import { RootStackParamList } from './types';
@@ -28,7 +30,9 @@ export function RootNavigator() {
         <Stack.Screen name="SessionDetail" component={SessionDetailScreen} />
         <Stack.Screen name="Exos" component={ExosScreen} />
         <Stack.Screen name="ExoDetail" component={ExoDetailScreen} />
-        <Stack.Screen name="Edit" component={EditSessionScreen} />
+        <Stack.Screen name="ExoEdit" component={ExoEditScreen} />
+        <Stack.Screen name="Sessions" component={SessionsScreen} />
+        <Stack.Screen name="SessionEdit" component={SessionEditScreen} />
         <Stack.Screen name="Planning" component={PlanningScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
       </Stack.Navigator>

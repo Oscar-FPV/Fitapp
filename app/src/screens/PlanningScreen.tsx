@@ -1,9 +1,10 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useMemo, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BackHeader } from '../components/BackHeader';
+import { EmptyState } from '../components/EmptyState';
 import { Screen } from '../components/Screen';
-import { sessionTag, TEMPLATES, templateById } from '../data/catalog';
+import { findTemplate, sessionTag, totalSets } from '../data/catalog';
 import { RootStackParamList } from '../navigation/types';
 import { resolveDayTemplate } from '../store/selectors';
 import { useStore } from '../store/useStore';
@@ -17,6 +18,7 @@ const MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'aoû
 
 export default function PlanningScreen({ navigation }: Props) {
   const plan = useStore((s) => s.plan);
+  const templates = useStore((s) => s.templates);
   const history = useStore((s) => s.history);
   const accent = useStore((s) => s.settings.accent);
   const setDayTemplate = useStore((s) => s.setDayTemplate);
@@ -27,39 +29,58 @@ export default function PlanningScreen({ navigation }: Props) {
 
   const today = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => dateKey(today), [today]);
-
-  const weekStart = useMemo(
-    () => addDays(startOfWeek(today), weekOffset * 7),
-    [today, weekOffset]
-  );
+  const weekStart = useMemo(() => addDays(startOfWeek(today), weekOffset * 7), [today, weekOffset]);
 
   const days = useMemo(
     () =>
       Array.from({ length: 7 }, (_, i) => {
         const date = addDays(weekStart, i);
         const key = dateKey(date);
-        const templateId = resolveDayTemplate(plan, history, key, todayKey) ?? null;
-        return { date, key, templateId, isToday: key === todayKey };
+        return {
+          date,
+          key,
+          templateId: resolveDayTemplate(plan, key),
+          isToday: key === todayKey,
+          done: history.some((h) => h.dateKey === key),
+        };
       }),
-    [weekStart, plan, history, todayKey]
+    [weekStart, plan, todayKey, history]
   );
 
-  const workDays = days.filter((d) => {
-    const t = d.templateId ? templateById(d.templateId) : undefined;
-    return t && !t.isActiveRest;
-  });
+  const workDays = days.filter((d) => findTemplate(templates, d.templateId));
   const totalSeries = workDays.reduce((a, d) => {
-    const t = templateById(d.templateId!);
-    return a + (t?.exercises.reduce((x, e) => x + e.sets, 0) ?? 0);
+    const t = findTemplate(templates, d.templateId);
+    return a + (t ? totalSets(t.exercises) : 0);
   }, 0);
 
   const weekRange = `${weekStart.getDate()} – ${addDays(weekStart, 6).getDate()} ${
     MONTHS[addDays(weekStart, 6).getMonth()]
   }`;
   const weekTitle =
-    weekOffset === 0 ? 'Cette semaine' : weekOffset === 1 ? 'Semaine prochaine' : weekOffset === -1 ? 'Semaine dernière' : `Semaine ${weekOffset > 0 ? '+' : ''}${weekOffset}`;
+    weekOffset === 0
+      ? 'Cette semaine'
+      : weekOffset === 1
+      ? 'Semaine prochaine'
+      : weekOffset === -1
+      ? 'Semaine dernière'
+      : `Semaine ${weekOffset > 0 ? '+' : ''}${weekOffset}`;
 
   const pickDate = pickDayKey ? new Date(pickDayKey + 'T00:00:00') : null;
+
+  if (templates.length === 0) {
+    return (
+      <Screen>
+        <BackHeader title="Planning" onBack={() => navigation.goBack()} />
+        <EmptyState
+          title="Aucune séance à planifier"
+          body="Composez d'abord vos séances, vous pourrez ensuite les placer sur n'importe quel jour."
+          actionLabel="Créer une séance"
+          onAction={() => navigation.navigate('Sessions')}
+          accent={accent}
+        />
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
@@ -88,8 +109,8 @@ export default function PlanningScreen({ navigation }: Props) {
       </View>
 
       {days.map((d, i) => {
-        const t = d.templateId ? templateById(d.templateId) : undefined;
-        const stripe = t ? (t.accent ?? (d.isToday ? accent : colors.text)) : colors.fillPill;
+        const t = findTemplate(templates, d.templateId);
+        const stripe = t ? (d.isToday ? accent : colors.text) : colors.fillPill;
         return (
           <Pressable
             key={d.key}
@@ -109,13 +130,18 @@ export default function PlanningScreen({ navigation }: Props) {
               <Text
                 style={[
                   styles.dayTitle,
-                  { color: t ? colors.text : colors.textFaint, fontFamily: t ? fonts.semibold : fonts.regular },
+                  {
+                    color: t ? colors.text : colors.textFaint,
+                    fontFamily: t ? fonts.semibold : fonts.regular,
+                  },
                 ]}
                 numberOfLines={1}
               >
                 {t ? t.name : 'Repos'}
               </Text>
-              <Text style={styles.dayTag}>{t ? sessionTag(t) : 'libre'}</Text>
+              <Text style={styles.dayTag}>
+                {d.done ? '✓ séance faite' : t ? sessionTag(t) : 'libre'}
+              </Text>
             </View>
             <Text style={styles.chevron}>›</Text>
           </Pressable>
@@ -123,8 +149,8 @@ export default function PlanningScreen({ navigation }: Props) {
       })}
 
       <Text style={styles.hint}>
-        Touchez un jour pour y placer une séance. Le bloc suit le nombre de séances faites, pas les
-        dates — décaler un jour ne casse pas la progression.
+        Touchez un jour pour y placer une séance. Rien n'est figé : déplacez vos séances au gré de
+        votre semaine, la progression suit les séances faites, pas les dates.
       </Text>
 
       <Modal
@@ -138,39 +164,39 @@ export default function PlanningScreen({ navigation }: Props) {
           <View style={styles.sheet}>
             <View style={styles.handle} />
             <Text style={styles.sheetTitle}>
-              {pickDate ? `${dayLongName(pickDate)} ${pickDate.getDate()} ${MONTHS[pickDate.getMonth()]}` : ''}
+              {pickDate
+                ? `${dayLongName(pickDate)} ${pickDate.getDate()} ${MONTHS[pickDate.getMonth()]}`
+                : ''}
             </Text>
             <Text style={styles.sheetSub}>Quelle séance ce jour-là ?</Text>
 
-            {[...TEMPLATES, null].map((t) => {
-              const id = t?.id ?? null;
-              const selected =
-                pickDayKey !== null &&
-                (resolveDayTemplate(plan, history, pickDayKey, todayKey) ?? null) === id;
-              const stripe = t ? (t.accent ?? (selected ? accent : colors.text)) : colors.fillPill;
-              return (
-                <Pressable
-                  key={id ?? 'repos'}
-                  onPress={() => {
-                    if (pickDayKey) setDayTemplate(pickDayKey, id);
-                    setPickDayKey(null);
-                  }}
-                  style={[
-                    styles.option,
-                    selected ? { borderWidth: 2, borderColor: accent } : null,
-                  ]}
-                >
-                  <View style={[styles.optionStripe, { backgroundColor: stripe }]} />
-                  <View style={styles.optionText}>
-                    <Text style={[styles.optionName, { color: t ? colors.text : colors.textFaint }]}>
-                      {t ? t.name : 'Repos'}
-                    </Text>
-                    <Text style={styles.optionTag}>{t ? sessionTag(t) : 'aucune séance'}</Text>
-                  </View>
-                  {selected ? <Text style={[styles.check, { color: accent }]}>✓</Text> : null}
-                </Pressable>
-              );
-            })}
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {[...templates, null].map((t) => {
+                const id = t?.id ?? null;
+                const selected =
+                  pickDayKey !== null && resolveDayTemplate(plan, pickDayKey) === id;
+                const stripe = t ? (selected ? accent : colors.text) : colors.fillPill;
+                return (
+                  <Pressable
+                    key={id ?? 'repos'}
+                    onPress={() => {
+                      if (pickDayKey) setDayTemplate(pickDayKey, id);
+                      setPickDayKey(null);
+                    }}
+                    style={[styles.option, selected ? { borderWidth: 2, borderColor: accent } : null]}
+                  >
+                    <View style={[styles.optionStripe, { backgroundColor: stripe }]} />
+                    <View style={styles.optionText}>
+                      <Text style={[styles.optionName, { color: t ? colors.text : colors.textFaint }]}>
+                        {t ? t.name : 'Repos'}
+                      </Text>
+                      <Text style={styles.optionTag}>{t ? sessionTag(t) : 'aucune séance'}</Text>
+                    </View>
+                    {selected ? <Text style={[styles.check, { color: accent }]}>✓</Text> : null}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -231,13 +257,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,
-    borderBottomLeftRadius: 42,
-    borderBottomRightRadius: 42,
     paddingHorizontal: 18,
     paddingTop: 22,
-    paddingBottom: 26,
+    paddingBottom: 34,
+    maxHeight: '78%',
   },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 16 },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
   sheetTitle: { fontFamily: fonts.bold, fontSize: 19, letterSpacing: -0.4, color: colors.text, marginBottom: 2 },
   sheetSub: { fontFamily: fonts.regular, fontSize: 12.5, color: colors.textFaint, marginBottom: 16 },
   option: {

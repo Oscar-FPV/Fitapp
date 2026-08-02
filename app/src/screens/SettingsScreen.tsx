@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { BackHeader } from '../components/BackHeader';
 import { Card } from '../components/Card';
 import { Screen } from '../components/Screen';
@@ -16,7 +16,10 @@ const SIZES = [48, 56, 64, 72, 78];
 export default function SettingsScreen({ navigation }: Props) {
   const settings = useStore((s) => s.settings);
   const history = useStore((s) => s.history);
+  const exercises = useStore((s) => s.exercises);
+  const templates = useStore((s) => s.templates);
   const update = useStore((s) => s.updateSettings);
+  const resetAll = useStore((s) => s.resetAll);
   const accent = settings.accent;
 
   const rows = [
@@ -53,38 +56,30 @@ export default function SettingsScreen({ navigation }: Props) {
       valueColor: settings.autoRest ? accent : colors.textFaintest,
       onPress: () => update({ autoRest: !settings.autoRest }),
     },
+    {
+      key: 'restNotification',
+      label: 'Alerte fin de repos',
+      hint: 'notification — vibre aussi sur la montre',
+      value: settings.restNotification ? 'activée' : 'désactivée',
+      valueColor: settings.restNotification ? accent : colors.textFaintest,
+      onPress: () => update({ restNotification: !settings.restNotification }),
+    },
   ];
 
-  // Block progression follows sessions completed, not calendar dates, so shifting
-  // a day in Planning never breaks the cycle. 4 sessions per week, 5-week blocks.
-  const blockWeek = (Math.floor(history.length / 4) % 5) + 1;
+  const confirmReset = () =>
+    Alert.alert(
+      'Tout effacer ?',
+      'Exercices, séances, planning et historique seront définitivement supprimés.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Tout effacer', style: 'destructive', onPress: resetAll },
+      ]
+    );
+
 
   return (
     <Screen>
       <BackHeader title="Réglages" onBack={() => navigation.goBack()} />
-
-      <Card style={styles.blockCard}>
-        <Text style={styles.cardLabel}>Bloc en cours</Text>
-        <View style={styles.blockRow}>
-          <Text style={styles.blockName}>Hypertrophie</Text>
-          <Text style={styles.blockWeek}>semaine {blockWeek} / 5</Text>
-        </View>
-        <View style={styles.blockBars}>
-          {[1, 2, 3, 4, 5].map((w) => (
-            <View
-              key={w}
-              style={[
-                styles.blockBar,
-                {
-                  backgroundColor:
-                    w < blockWeek ? colors.text : w === blockWeek ? accent : colors.border,
-                },
-              ]}
-            />
-          ))}
-        </View>
-        <Text style={styles.blockHint}>Deload prévu en semaine 5</Text>
-      </Card>
 
       <Text style={styles.sectionLabel}>Séance</Text>
       <Card style={styles.rowsCard}>
@@ -146,27 +141,24 @@ export default function SettingsScreen({ navigation }: Props) {
         </View>
       </Card>
 
+      <Text style={styles.sectionLabel}>Données</Text>
+      <Card style={styles.dataCard}>
+        <Text style={styles.dataLine}>
+          {exercises.length} exercice{exercises.length > 1 ? 's' : ''} · {templates.length} séance
+          {templates.length > 1 ? 's' : ''} · {history.length} entraînement
+          {history.length > 1 ? 's' : ''} enregistré{history.length > 1 ? 's' : ''}
+        </Text>
+        <Pressable onPress={confirmReset} style={styles.resetBtn}>
+          <Text style={styles.resetLabel}>Tout effacer</Text>
+        </Pressable>
+      </Card>
+
       <Text style={styles.footer}>v1.0 · données stockées sur l'appareil</Text>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  blockCard: { padding: 16, paddingHorizontal: 18, marginBottom: 22 },
-  cardLabel: {
-    fontFamily: fonts.semibold,
-    fontSize: 11,
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    color: colors.textFaint,
-    marginBottom: 8,
-  },
-  blockRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 },
-  blockName: { fontFamily: fonts.semibold, fontSize: 17, color: colors.text },
-  blockWeek: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMuted },
-  blockBars: { flexDirection: 'row', gap: 6 },
-  blockBar: { flex: 1, height: 8, borderRadius: 4 },
-  blockHint: { fontFamily: fonts.regular, fontSize: 12.5, color: colors.textFaintest, marginTop: 10 },
   sectionLabel: {
     fontFamily: fonts.semibold,
     fontSize: 11,
@@ -189,6 +181,10 @@ const styles = StyleSheet.create({
   settingHint: { fontFamily: fonts.regular, fontSize: 12.5, color: colors.textFaintest, marginTop: 2 },
   settingValue: { fontFamily: fonts.semibold, fontSize: 14.5 },
   appearanceCard: { padding: 16, paddingHorizontal: 18, marginBottom: 22 },
+  dataCard: { padding: 16, paddingHorizontal: 18, marginBottom: 22 },
+  dataLine: { fontFamily: fonts.regular, fontSize: 14, color: colors.textSecondary, lineHeight: 21 },
+  resetBtn: { marginTop: 14, alignSelf: 'flex-start' },
+  resetLabel: { fontFamily: fonts.medium, fontSize: 14, color: '#C0392B' },
   swatchRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
   swatch: {
     width: 48,

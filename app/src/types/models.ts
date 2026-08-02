@@ -1,10 +1,10 @@
-export type MuscleGroup = 'Dos' | 'Pecs' | 'Jambes' | 'Épaules' | 'Bras';
+export type MuscleGroup = 'Dos' | 'Pecs' | 'Jambes' | 'Épaules' | 'Bras' | 'Abdos';
 
 export interface ExerciseDef {
   id: string;
   name: string;
   group: MuscleGroup;
-  freq: string;
+  /** True for bodyweight movements loaded with added weight (shown as "+15 kg"). */
   isWeighted: boolean;
 }
 
@@ -20,9 +20,6 @@ export interface TemplateExercise {
 export interface WorkoutTemplate {
   id: string;
   name: string;
-  shortName: string;
-  accent: string | null;
-  isActiveRest: boolean;
   exercises: TemplateExercise[];
 }
 
@@ -51,7 +48,6 @@ export interface ActiveSession {
   lastValidated: { exerciseId: string; setIndex: number; kg: number; reps: number; rpe: number } | null;
   note: string;
   noteOpen: boolean;
-  setsOverride: Record<string, number> | null;
 }
 
 export interface HistorySet {
@@ -86,6 +82,8 @@ export interface Settings {
   restDefaultSec: number;
   unit: 'kg' | 'lb';
   autoRest: boolean;
+  /** Local notification at 0:00 so a paired watch buzzes the wrist. */
+  restNotification: boolean;
   accent: string;
   numberSize: number;
 }
